@@ -1,0 +1,180 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  width: 380px;
+  max-height: 600px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #f7fafc;
+  color: #2d3748;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+}
+
+header h2 {
+  font-size: 18px;
+  color: #667eea;
+}
+
+#credits {
+  background: #edf2f7;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-weight: bold;
+  color: #2d3748;
+  font-size: 14px;
+}
+
+h3 {
+  font-size: 15px;
+  margin: 12px 0 8px;
+  color: #4a5568;
+}
+
+#api-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+#apis {
+  list-style: none;
+  padding: 0;
+}
+
+#apis li {
+  background: white;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+  border-left: 4px solid #667eea;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  font-size: 14px;
+}
+
+#apis li .api-name {
+  font-weight: bold;
+  color: #2d3748;
+}
+
+#apis li .api-desc {
+  font-size: 12px;
+  color: #718096;
+  margin: 4px 0;
+}
+
+#apis li .api-run {
+  margin-top: 6px;
+  display: flex;
+  gap: 6px;
+}
+
+#apis li .api-run input {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+#apis li .api-run button {
+  background: #48bb78;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 12px;
+}
+
+#apis li .api-run button:hover {
+  background: #38a169;
+}
+
+#apis li .api-run button:disabled {
+  background: #a0aec0;
+  cursor: not-allowed;
+}
+
+#save-section input,
+#save-section textarea {
+  width: 100%;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+#save-section textarea {
+  resize: vertical;
+  min-height: 50px;
+}
+
+#price-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+#price-input input {
+  width: 60px;
+}
+
+#public-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+#save-api-btn {
+  width: 100%;
+  padding: 8px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+#save-api-btn:hover {
+  background: #5a67d8;
+}
+
+#status {
+  margin-top: 10px;
+  font-size: 13px;
+  text-align: center;
+  color: #718096;
+  min-height: 20px;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 12px 0;
+}
+
+#no-apis {
+  color: #718096;
+  font-size: 13px;
+  text-align: center;
+  padding: 20px 0;
+}

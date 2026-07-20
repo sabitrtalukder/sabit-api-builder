@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Sabit's API Builder</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h2>⚡ Sabit's API Builder</h2>
+      <div id="credits">Loading credits...</div>
+    </header>
+
+    <div id="api-list">
+      <h3>Your APIs</h3>
+      <ul id="apis"></ul>
+    </div>
+
+    <hr>
+
+    <div id="save-section">
+      <h3>Save New API</h3>
+      <input type="text" id="api-name" placeholder="API Name" />
+      <textarea id="api-desc" placeholder="Description"></textarea>
+      <textarea id="api-code" placeholder="JavaScript code (params) => { ... }" rows="3"></textarea>
+      <div id="price-input">
+        <label>Price (credits):</label>
+        <input type="number" id="api-price" value="0" min="0" />
+      </div>
+      <div id="public-toggle">
+        <input type="checkbox" id="api-public" />
+        <label for="api-public">🌍 Make Public</label>
+      </div>
+      <button id="save-api-btn">💾 Save API</button>
+    </div>
+
+    <div id="status"></div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
