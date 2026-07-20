@@ -2,6 +2,11 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
 
+// ============================================================
+// 🔥 CRITICAL: Set this to your Render backend URL
+// ============================================================
+const API_BASE = 'https://sabit-api-builder.onrender.com';
+
 function App() {
   // ----- AUTH STATE -----
   const [isLogin, setIsLogin] = useState(true);
@@ -20,7 +25,7 @@ function App() {
   const [apiDescription, setApiDescription] = useState('');
   const [apiCode, setApiCode] = useState('');
   const [isPublic, setIsPublic] = useState(false);
-  const [apiPrice, setApiPrice] = useState(0); // 🆕 Price in credits
+  const [apiPrice, setApiPrice] = useState(0);
   const [editingApi, setEditingApi] = useState(null);
 
   // ----- API LIST STATE -----
@@ -48,7 +53,7 @@ function App() {
   const fetchCredits = async () => {
     if (!userId || !token) return;
     try {
-      const res = await axios.get(`http://localhost:5000/api/credits?userId=${userId}`, {
+      const res = await axios.get(`${API_BASE}/api/credits?userId=${userId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       console.log('📊 Credits received:', res.data.credits);
@@ -79,7 +84,7 @@ function App() {
   const fetchApis = async () => {
     try {
       if (!userId) return;
-      const response = await axios.get(`http://localhost:5000/api/apis?userId=${userId}`);
+      const response = await axios.get(`${API_BASE}/api/apis?userId=${userId}`);
       setApiList(response.data);
     } catch (error) {
       console.error('Error fetching APIs:', error);
@@ -92,7 +97,7 @@ function App() {
   const fetchMarketplace = async () => {
     try {
       if (!userId) return;
-      const response = await axios.get(`http://localhost:5000/api/marketplace?userId=${userId}`);
+      const response = await axios.get(`${API_BASE}/api/marketplace?userId=${userId}`);
       setMarketplaceApis(response.data);
     } catch (error) {
       console.error('Error fetching marketplace:', error);
@@ -105,7 +110,7 @@ function App() {
   // ----- AUTH HANDLERS -----
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const url = isLogin ? 'http://localhost:5000/login' : 'http://localhost:5000/register';
+    const url = isLogin ? `${API_BASE}/login` : `${API_BASE}/register`;
     try {
       const response = await axios.post(url, { username, password });
       if (isLogin) {
@@ -146,7 +151,7 @@ function App() {
     }
     alert('🤖 Thinking... Let me clarify that for you.');
     try {
-      const response = await axios.post('http://localhost:5000/api/gemini-clarify', {
+      const response = await axios.post(`${API_BASE}/api/gemini-clarify`, {
         description: apiDescription
       });
       setApiName(response.data.name);
@@ -162,7 +167,7 @@ function App() {
   const handleDeleteApi = async (apiId) => {
     if (!window.confirm('Are you sure you want to delete this API?')) return;
     try {
-      await axios.delete(`http://localhost:5000/api/delete/${apiId}`, {
+      await axios.delete(`${API_BASE}/api/delete/${apiId}`, {
         data: { userId: parseInt(userId) }
       });
       alert('🗑️ API deleted successfully!');
@@ -203,7 +208,7 @@ function App() {
     }
     try {
       if (editingApi) {
-        await axios.put(`http://localhost:5000/api/update/${editingApi.id}`, {
+        await axios.put(`${API_BASE}/api/update/${editingApi.id}`, {
           userId: parseInt(userId),
           name: apiName,
           description: apiDescription,
@@ -213,7 +218,7 @@ function App() {
         });
         alert('✅ API updated successfully!');
       } else {
-        await axios.post('http://localhost:5000/api/create', {
+        await axios.post(`${API_BASE}/api/create`, {
           name: apiName,
           description: apiDescription,
           code: apiCode,
@@ -251,7 +256,7 @@ function App() {
     }
     setExecutingId(apiId);
     try {
-      const response = await axios.post('http://localhost:5000/api/execute', {
+      const response = await axios.post(`${API_BASE}/api/execute`, {
         apiId: apiId,
         userId: userId,
         params: params
@@ -260,7 +265,7 @@ function App() {
         ...prev,
         [apiId]: { success: true, output: response.data.output }
       }));
-      await fetchCredits(); // Refresh credits after execution
+      await fetchCredits();
     } catch (error) {
       if (error.response?.data?.error?.includes('Insufficient credits')) {
         alert('⚠️ You have no credits left. Please purchase more credits to continue.');
@@ -280,13 +285,13 @@ function App() {
     }
   };
 
-  // 🆕 BUY CREDITS HANDLER
+  // ----- BUY CREDITS HANDLER -----
   const handleBuyCredits = async (credits, amount) => {
     console.log('🛒 Buying credits:', { credits, amount });
     setBuying(true);
     try {
       const res = await axios.post(
-        'http://localhost:5000/api/payment/create',
+        `${API_BASE}/api/payment/create`,
         { credits, amount },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -446,7 +451,7 @@ function App() {
               <p style={{ fontSize: '14px', color: '#4a5568', textAlign: 'left', marginTop: '10px', marginBottom: '4px' }}>⚡ JavaScript Logic (receives <code>params</code>, must <code>return</code> a value):</p>
               <textarea placeholder='e.g., return { greeting: "Hello " + (params.name || "World") };' value={apiCode} onChange={(e) => setApiCode(e.target.value)} className="modal-textarea" rows="4" style={{ fontFamily: 'monospace', background: '#f7fafc' }} />
               
-              {/* 🆕 Price input */}
+              {/* Price input */}
               <div style={{ display: 'flex', alignItems: 'center', marginTop: '15px', padding: '10px', background: '#f7fafc', borderRadius: '8px' }}>
                 <label style={{ fontWeight: 'bold', color: '#2d3748', marginRight: '10px' }}>💰 Price (credits):</label>
                 <input
