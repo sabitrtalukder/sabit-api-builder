@@ -28,6 +28,10 @@ function App() {
   const [apiPrice, setApiPrice] = useState(0);
   const [editingApi, setEditingApi] = useState(null);
 
+  // ----- SPEECH-TO-TEXT STATE -----
+  const [isListening, setIsListening] = useState(false);
+  const [recognition, setRecognition] = useState(null);
+
   // ----- API LIST STATE -----
   const [apiList, setApiList] = useState([]);
   const [marketplaceApis, setMarketplaceApis] = useState([]);
@@ -48,6 +52,79 @@ function App() {
     { credits: 50, amount: 4.00 },
     { credits: 100, amount: 7.00 },
   ];
+
+  // ============================================================
+  // 🎤 SPEECH-TO-TEXT SETUP
+  // ============================================================
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognitionInstance = new SpeechRecognition();
+      recognitionInstance.continuous = false;
+      recognitionInstance.interimResults = false;
+      recognitionInstance.lang = 'en-US';
+      recognitionInstance.maxAlternatives = 1;
+
+      recognitionInstance.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        console.log('🎤 Voice detected:', transcript);
+        setApiDescription(transcript);
+        setIsListening(false);
+        
+        setTimeout(() => {
+          if (transcript.length > 0) {
+            handleClarifyApi();
+          }
+        }, 500);
+      };
+
+      recognitionInstance.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+        if (event.error === 'not-allowed') {
+          alert('❌ Please allow microphone access to use voice commands.');
+        } else if (event.error === 'no-speech') {
+          alert('❌ No speech detected. Please try again.');
+        } else {
+          alert('❌ Speech recognition error: ' + event.error);
+        }
+      };
+
+      recognitionInstance.onend = () => {
+        setIsListening(false);
+      };
+
+      setRecognition(recognitionInstance);
+    } else {
+      console.warn('Speech recognition not supported in this browser.');
+    }
+  }, []);
+
+  // ----- START VOICE RECORDING -----
+  const startVoiceRecording = () => {
+    if (!recognition) {
+      alert('❌ Speech recognition is not supported. Please use Chrome or Edge.');
+      return;
+    }
+
+    if (!showModal) {
+      setEditingApi(null);
+      setApiName('');
+      setApiDescription('');
+      setApiCode('');
+      setIsPublic(false);
+      setApiPrice(0);
+      setShowModal(true);
+    }
+
+    try {
+      recognition.start();
+      setIsListening(true);
+    } catch (error) {
+      console.error('Failed to start speech recognition:', error);
+      setIsListening(false);
+    }
+  };
 
   // ----- FETCH CREDITS -----
   const fetchCredits = async () => {
@@ -143,7 +220,9 @@ function App() {
     if (message) alert(message);
   };
 
-  // ----- AI CLARIFICATION -----
+  // ============================================================
+  // 🎤 AI CLARIFICATION WITH AUTO-CODE GENERATION
+  // ============================================================
   const handleClarifyApi = async () => {
     if (!apiDescription) {
       alert('Please describe what you want the API to do first!');
@@ -156,7 +235,13 @@ function App() {
       });
       setApiName(response.data.name);
       setApiDescription(response.data.description);
-      alert('✅ AI has clarified your API! Review the details below and click "Save".');
+      // 🔥 AUTO-FILL CODE FROM AI
+      if (response.data.code) {
+        setApiCode(response.data.code);
+      } else {
+        setApiCode('return { message: "Your API logic goes here" };');
+      }
+      alert('✅ AI has generated the API design and code! Review and save.');
     } catch (error) {
       console.error('Error calling AI:', error);
       alert('❌ Error: ' + (error.response?.data?.error || 'Could not reach the AI service.'));
@@ -445,11 +530,75 @@ function App() {
           <div className="modal-overlay" onClick={() => { setShowModal(false); setEditingApi(null); setApiName(''); setApiDescription(''); setApiCode(''); setIsPublic(false); setApiPrice(0); }}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()}>
               <h2>{editingApi ? '✏️ Edit API' : '🔴 Create New API'}</h2>
-              <p>{editingApi ? 'Update the details below.' : 'Describe what you want, then click "Clarify with AI".'}</p>
-              <input type="text" placeholder="API Name" value={apiName} onChange={(e) => setApiName(e.target.value)} className="modal-input" />
-              <textarea placeholder="Describe what this API should do" value={apiDescription} onChange={(e) => setApiDescription(e.target.value)} className="modal-textarea" rows="3" />
-              <p style={{ fontSize: '14px', color: '#4a5568', textAlign: 'left', marginTop: '10px', marginBottom: '4px' }}>⚡ JavaScript Logic (receives <code>params</code>, must <code>return</code> a value):</p>
-              <textarea placeholder='e.g., return { greeting: "Hello " + (params.name || "World") };' value={apiCode} onChange={(e) => setApiCode(e.target.value)} className="modal-textarea" rows="4" style={{ fontFamily: 'monospace', background: '#f7fafc' }} />
+              <p>{editingApi ? 'Update the details below.' : 'Describe what you want, then click "Clarify with AI" or use the Voice Command button below.'}</p>
+              
+              {/* ============================================================
+                  🎤 SPEECH-TO-TEXT BUTTON
+                  ============================================================ */}
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <button
+                  onClick={startVoiceRecording}
+                  disabled={isListening}
+                  style={{
+                    padding: '12px 24px',
+                    background: isListening ? '#fc8181' : '#48bb78',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '18px',
+                    fontWeight: 'bold',
+                    cursor: isListening ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    transition: 'all 0.3s'
+                  }}
+                  onMouseEnter={(e) => { if (!isListening) e.currentTarget.style.transform = 'scale(1.05)'; }}
+                  onMouseLeave={(e) => { if (!isListening) e.currentTarget.style.transform = 'scale(1)'; }}
+                >
+                  <span style={{ fontSize: '28px' }}>{isListening ? '🔴' : '🎤'}</span>
+                  {isListening ? 'Listening... Speak now!' : 'Voice Command'}
+                </button>
+                {isListening && (
+                  <span style={{ 
+                    color: '#e53e3e', 
+                    fontWeight: 'bold', 
+                    animation: 'pulse 1s infinite',
+                    fontSize: '16px'
+                  }}>
+                    🔴 Recording...
+                  </span>
+                )}
+                <span style={{ fontSize: '14px', color: '#718096' }}>
+                  Say your API description in one voice command!
+                </span>
+              </div>
+
+              <input 
+                type="text" 
+                placeholder="API Name" 
+                value={apiName} 
+                onChange={(e) => setApiName(e.target.value)} 
+                className="modal-input" 
+              />
+              <textarea 
+                placeholder="Describe what this API should do" 
+                value={apiDescription} 
+                onChange={(e) => setApiDescription(e.target.value)} 
+                className="modal-textarea" 
+                rows="3" 
+              />
+              <p style={{ fontSize: '14px', color: '#4a5568', textAlign: 'left', marginTop: '10px', marginBottom: '4px' }}>
+                ⚡ JavaScript Logic (receives <code>params</code>, must <code>return</code> a value):
+              </p>
+              <textarea 
+                placeholder='e.g., return { greeting: "Hello " + (params.name || "World") };' 
+                value={apiCode} 
+                onChange={(e) => setApiCode(e.target.value)} 
+                className="modal-textarea" 
+                rows="4" 
+                style={{ fontFamily: 'monospace', background: '#f7fafc' }} 
+              />
               
               {/* Price input */}
               <div style={{ display: 'flex', alignItems: 'center', marginTop: '15px', padding: '10px', background: '#f7fafc', borderRadius: '8px' }}>

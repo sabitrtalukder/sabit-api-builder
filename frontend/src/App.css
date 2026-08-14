@@ -127,3 +127,17 @@ footer {
 .modal-btn.clarify:hover {
   background: #ed8936;
 }
+/* ============================================================
+   🎤 SPEECH-TO-TEXT - Pulse Animation
+   ============================================================ */
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+  100% {
+    opacity: 1;
+  }
+}

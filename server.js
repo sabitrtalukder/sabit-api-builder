@@ -296,13 +296,10 @@ app.post('/api/execute', (req, res) => {
     }
   }
 
-  // We'll wrap the credit updates in a transaction using better-sqlite3's transaction
   const transaction = db.transaction(() => {
     if (!isOwner && price > 0) {
-      // Deduct from runner
       const deductStmt = db.prepare('UPDATE users SET credits = credits - ? WHERE id = ?');
       deductStmt.run(price, userId);
-      // Add to creator
       const addStmt = db.prepare('UPDATE users SET credits = credits + ? WHERE id = ?');
       addStmt.run(price, api.userId);
     } else if (!isOwner && price === 0) {
@@ -312,12 +309,10 @@ app.post('/api/execute', (req, res) => {
       const deductStmt = db.prepare('UPDATE users SET credits = credits - 1 WHERE id = ?');
       deductStmt.run(userId);
     }
-    // Owner runs for free – no credit change
   });
 
   try {
     transaction();
-    // Execute the API code
     let code = api.code || `return { message: "No code defined for this API." };`;
     const sandbox = {
       params: params || {},
@@ -377,7 +372,7 @@ app.post('/api/payment/create', async (req, res) => {
   });
 });
 
-// ======================== AI ROUTE ========================
+// ======================== AI ROUTE (UPDATED WITH CODE GENERATION) ========================
 
 async function getFreeModels(apiKey) {
   try {
@@ -394,16 +389,26 @@ async function getFreeModels(apiKey) {
 
 async function callModel(model, description, apiKey) {
   const prompt = `
-You are an expert API designer.
-Based on the user's description below, generate a JSON object with a suitable API name and a detailed description.
+You are an expert API designer and JavaScript developer.
+
+Based on the user's description below, generate a complete API implementation.
 
 User Description: "${description}"
 
 Respond ONLY with a valid JSON object in this exact format:
 {
     "name": "A short, descriptive name for the API",
-    "description": "A detailed, technical description of what this API should do, including potential input parameters and output."
+    "description": "A detailed, technical description of what this API should do",
+    "code": "JavaScript code that implements the API logic. The code should be a function that takes a 'params' object and returns a result. Use proper JavaScript syntax. Do not include the function wrapper. For example: return { result: params.a + params.b };"
 }
+
+Guidelines for the code:
+- Use simple, clean JavaScript
+- Handle edge cases
+- Return a meaningful response
+- Use params for input
+- Keep it short and readable
+- No console.log statements
 `;
   const response = await axios.post(
     'https://openrouter.ai/api/v1/chat/completions',
@@ -414,7 +419,7 @@ Respond ONLY with a valid JSON object in this exact format:
         { role: 'user', content: prompt }
       ],
       temperature: 0.3,
-      max_tokens: 500
+      max_tokens: 800
     },
     {
       headers: {
@@ -437,9 +442,11 @@ app.post('/api/gemini-clarify', async (req, res) => {
   if (!description) return res.status(400).json({ error: 'Please provide a description.' });
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'API key missing.' });
+  
   let freeModels = await getFreeModels(apiKey);
   console.log(`📋 Found ${freeModels.length} free models`);
   let lastError = null;
+  
   for (const model of freeModels) {
     try {
       console.log(`🔄 Trying free model: ${model}`);
@@ -451,6 +458,7 @@ app.post('/api/gemini-clarify', async (req, res) => {
       lastError = error;
     }
   }
+  
   const PAID_MODELS = ['openai/gpt-4o-mini', 'anthropic/claude-3-haiku'];
   for (const model of PAID_MODELS) {
     try {
@@ -463,6 +471,7 @@ app.post('/api/gemini-clarify', async (req, res) => {
       lastError = error;
     }
   }
+  
   console.error('All models failed.');
   let errorMsg = 'AI service unavailable. ';
   if (lastError && lastError.response && lastError.response.data && lastError.response.data.error) {
