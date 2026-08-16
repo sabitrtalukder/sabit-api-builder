@@ -372,7 +372,7 @@ app.post('/api/payment/create', async (req, res) => {
   });
 });
 
-// ======================== AI ROUTE (UPDATED WITH CODE GENERATION) ========================
+// ======================== AI ROUTE (FORCED CODE GENERATION) ========================
 
 async function getFreeModels(apiKey) {
   try {
@@ -388,34 +388,32 @@ async function getFreeModels(apiKey) {
 }
 
 async function callModel(model, description, apiKey) {
+  // Prompt that forces AI to return code
   const prompt = `
 You are an expert API designer and JavaScript developer.
 
-Based on the user's description below, generate a complete API implementation.
+IMPORTANT INSTRUCTION: You MUST generate a complete API implementation including JavaScript code.
 
 User Description: "${description}"
 
-Respond ONLY with a valid JSON object in this exact format:
+You MUST respond with a valid JSON object containing exactly these three fields:
 {
-    "name": "A short, descriptive name for the API",
-    "description": "A detailed, technical description of what this API should do",
-    "code": "JavaScript code that implements the API logic. The code should be a function that takes a 'params' object and returns a result. Use proper JavaScript syntax. Do not include the function wrapper. For example: return { result: params.a + params.b };"
+  "name": "A short, descriptive name for the API",
+  "description": "A detailed, technical description of what this API should do",
+  "code": "JavaScript code that implements the API. The code must take a 'params' object and return a result. DO NOT use require() or import. Use only pure JavaScript. For example: return { result: params.a + params.b };"
 }
 
-Guidelines for the code:
-- Use simple, clean JavaScript
-- Handle edge cases
-- Return a meaningful response
-- Use params for input
-- Keep it short and readable
-- No console.log statements
+The "code" field MUST contain valid JavaScript. If the user asks to search something, the code should generate a URL or simulate the search.
+
+RESPOND ONLY WITH THE JSON. NO MARKDOWN. NO EXTRA TEXT.
 `;
+
   const response = await axios.post(
     'https://openrouter.ai/api/v1/chat/completions',
     {
       model: model,
       messages: [
-        { role: 'system', content: 'You are a helpful API design assistant. Always respond with valid JSON only. Do not wrap the JSON in markdown or add any extra text outside the JSON.' },
+        { role: 'system', content: 'You are a helpful API design assistant. Always respond with valid JSON only. Do not wrap the JSON in markdown or add any extra text outside the JSON. The JSON must have "name", "description", and "code" fields.' },
         { role: 'user', content: prompt }
       ],
       temperature: 0.3,
@@ -431,10 +429,23 @@ Guidelines for the code:
       timeout: 15000
     }
   );
+
   const raw = response.data.choices[0].message.content;
+  console.log('📝 Raw AI response:', raw.substring(0, 500));
+
+  // Extract JSON using regex
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('No JSON found in response');
-  return JSON.parse(jsonMatch[0]);
+
+  const parsed = JSON.parse(jsonMatch[0]);
+
+  // Ensure code field exists, if not, generate a fallback
+  if (!parsed.code || parsed.code.trim() === '') {
+    console.warn('⚠️ AI did not return code, using fallback');
+    parsed.code = `return { message: "Your API logic goes here", params: params };`;
+  }
+
+  return parsed;
 }
 
 app.post('/api/gemini-clarify', async (req, res) => {
@@ -442,11 +453,12 @@ app.post('/api/gemini-clarify', async (req, res) => {
   if (!description) return res.status(400).json({ error: 'Please provide a description.' });
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'API key missing.' });
-  
+
   let freeModels = await getFreeModels(apiKey);
   console.log(`📋 Found ${freeModels.length} free models`);
   let lastError = null;
-  
+
+  // Try free models first
   for (const model of freeModels) {
     try {
       console.log(`🔄 Trying free model: ${model}`);
@@ -458,7 +470,8 @@ app.post('/api/gemini-clarify', async (req, res) => {
       lastError = error;
     }
   }
-  
+
+  // Fallback to paid models
   const PAID_MODELS = ['openai/gpt-4o-mini', 'anthropic/claude-3-haiku'];
   for (const model of PAID_MODELS) {
     try {
@@ -471,7 +484,7 @@ app.post('/api/gemini-clarify', async (req, res) => {
       lastError = error;
     }
   }
-  
+
   console.error('All models failed.');
   let errorMsg = 'AI service unavailable. ';
   if (lastError && lastError.response && lastError.response.data && lastError.response.data.error) {

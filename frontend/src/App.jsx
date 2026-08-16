@@ -2,9 +2,6 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
 
-// ============================================================
-// 🔥 CRITICAL: Set this to your Render backend URL
-// ============================================================
 const API_BASE = 'https://sabit-api-builder.onrender.com';
 
 function App() {
@@ -45,7 +42,6 @@ function App() {
   const [showBuyModal, setShowBuyModal] = useState(false);
   const [buying, setBuying] = useState(false);
 
-  // Credit packages
   const packages = [
     { credits: 10, amount: 1.00 },
     { credits: 30, amount: 2.50 },
@@ -100,7 +96,6 @@ function App() {
     }
   }, []);
 
-  // ----- START VOICE RECORDING -----
   const startVoiceRecording = () => {
     if (!recognition) {
       alert('❌ Speech recognition is not supported. Please use Chrome or Edge.');
@@ -233,14 +228,20 @@ function App() {
       const response = await axios.post(`${API_BASE}/api/gemini-clarify`, {
         description: apiDescription
       });
-      setApiName(response.data.name);
-      setApiDescription(response.data.description);
-      // 🔥 AUTO-FILL CODE FROM AI
-      if (response.data.code) {
+      console.log('📦 AI Response:', response.data);
+      
+      setApiName(response.data.name || 'AI Generated API');
+      setApiDescription(response.data.description || apiDescription);
+      
+      // Always set code – even if AI didn't provide one, use fallback
+      if (response.data.code && response.data.code.trim() !== '') {
         setApiCode(response.data.code);
       } else {
-        setApiCode('return { message: "Your API logic goes here" };');
+        // Generate a sensible default based on description
+        const defaultCode = `return { message: "Your API is ready!", description: "${apiDescription.substring(0, 50)}", timestamp: new Date().toISOString() };`;
+        setApiCode(defaultCode);
       }
+      
       alert('✅ AI has generated the API design and code! Review and save.');
     } catch (error) {
       console.error('Error calling AI:', error);
