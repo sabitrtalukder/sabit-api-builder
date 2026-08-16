@@ -18,9 +18,7 @@ const PORT = process.env.PORT || 5000;
 
 // Check which API key is available
 const geminiKey = process.env.GEMINI_API_KEY;
-const openrouterKey = process.env.OPENROUTER_API_KEY;
 console.log('🔑 Gemini API Key loaded:', geminiKey ? '✅ YES' : '❌ NO');
-console.log('🔑 OpenRouter API Key loaded:', openrouterKey ? '✅ YES' : '❌ NO');
 
 // CORS
 app.use(cors({
@@ -384,10 +382,8 @@ app.post('/api/payment/create', async (req, res) => {
   }
 });
 
-// ======================== AI ROUTE - UPDATED MODEL NAMES ========================
+// ======================== REAL AI ROUTE (Gemini 1.5 Pro) ========================
 
-// Use Gemini API (free with university email)
-// ✅ Updated to use currently available models
 async function callGemini(description, apiKey) {
   const prompt = `
 You are an expert API designer and JavaScript developer.
@@ -403,159 +399,77 @@ You MUST respond with a valid JSON object containing exactly these three fields:
   "code": "JavaScript code that implements the API. The code must take a 'params' object and return a result. DO NOT use require() or import. Use only pure JavaScript. For example: return { result: params.a + params.b };"
 }
 
-The "code" field MUST contain valid JavaScript. If the user asks to search something, the code should generate a URL or simulate the search.
+The "code" field MUST contain valid JavaScript.
 
 RESPOND ONLY WITH THE JSON. NO MARKDOWN. NO EXTRA TEXT.
 `;
 
-  // ✅ Updated to use gemini-2.0-flash (currently available)
-  const models = [
-    'gemini-2.0-flash',
-    'gemini-2.5-flash',
-    'gemini-1.5-flash'
-  ];
+  // ✅ Using gemini-1.5-pro - currently available
+  const response = await axios.post(
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=' + apiKey,
+    {
+      contents: [{
+        parts: [{ text: prompt }]
+      }]
+    },
+    { timeout: 20000 }
+  );
 
-  let lastError = null;
+  const raw = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!raw) throw new Error('No response from Gemini');
 
-  for (const model of models) {
-    try {
-      console.log(`🔄 Trying Gemini model: ${model}`);
-      const response = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=` + apiKey,
-        {
-          contents: [{
-            parts: [{ text: prompt }]
-          }]
-        },
-        { timeout: 15000 }
-      );
+  console.log('📝 Gemini response received');
 
-      const raw = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!raw) throw new Error('No response from Gemini');
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No JSON found');
 
-      console.log(`✅ Success with model: ${model}`);
-      console.log('📝 Raw Gemini response:', raw.substring(0, 300));
+  const parsed = JSON.parse(jsonMatch[0]);
 
-      const jsonMatch = raw.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('No JSON found in response');
-
-      const parsed = JSON.parse(jsonMatch[0]);
-
-      if (!parsed.code || parsed.code.trim() === '') {
-        console.warn('⚠️ Gemini did not return code, using fallback');
-        parsed.code = `return { message: "Your API logic goes here", params: params };`;
-      }
-
-      return parsed;
-    } catch (error) {
-      console.warn(`❌ Model ${model} failed:`, error.response?.data?.error?.message || error.message);
-      lastError = error;
-    }
+  if (!parsed.code || parsed.code.trim() === '') {
+    parsed.code = `return { message: "Your API logic goes here", params: params };`;
   }
 
-  throw new Error('All Gemini models failed. Last error: ' + lastError?.message);
+  return parsed;
 }
 
 app.post('/api/gemini-clarify', async (req, res) => {
   const { description } = req.body;
   if (!description) return res.status(400).json({ error: 'Please provide a description.' });
 
-  // Try Gemini with multiple models
   const geminiKey = process.env.GEMINI_API_KEY;
+
   if (geminiKey) {
     try {
-      console.log('🔄 Trying Gemini (University)');
+      console.log('🔄 Calling Gemini 1.5 Pro');
       const result = await callGemini(description, geminiKey);
-      console.log('✅ Success with Gemini');
+      console.log('✅ Real AI generated the API!');
       return res.json(result);
     } catch (error) {
-      console.warn('❌ Gemini failed:', error.message);
-    }
-  }
-
-  // Try OpenRouter as fallback
-  const openrouterKey = process.env.OPENROUTER_API_KEY;
-  if (openrouterKey) {
-    try {
-      console.log('🔄 Trying OpenRouter fallback');
-      const response = await axios.post(
-        'https://openrouter.ai/api/v1/chat/completions',
-        {
-          model: 'openai/gpt-4o-mini',
-          messages: [
-            { role: 'system', content: 'You are an expert API designer. Always respond with valid JSON only.' },
-            { role: 'user', content: `Generate a JSON with name, description, and code for: "${description}". The code must take a params object and return a result. No require() or import.` }
-          ],
-          temperature: 0.3,
-          max_tokens: 800
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${openrouterKey}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 15000
-        }
-      );
-      const raw = response.data.choices[0].message.content;
-      const jsonMatch = raw.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (parsed.code) {
-          console.log('✅ Success with OpenRouter');
-          return res.json(parsed);
-        }
-      }
-    } catch (error) {
-      console.warn('❌ OpenRouter failed:', error.message);
+      console.warn('❌ Gemini 1.5 Pro failed:', error.message);
     }
   }
 
   // ============================================================
-  // INTELLIGENT FALLBACK - Creates working APIs even if AI fails
+  // FALLBACK (only if AI fails)
   // ============================================================
-  console.log('⚠️ All AI services failed, returning intelligent fallback response');
+  console.log('⚠️ AI failed, using fallback');
   
   const keywords = description.toLowerCase();
   let name = "Custom API";
   let code = `return { message: "Your API logic goes here", params: params };`;
   
-  // Detect what the user wants and generate appropriate code
-  if (keywords.includes('add') || keywords.includes('sum') || keywords.includes('plus') || keywords.includes('calculator') || keywords.includes('calculate')) {
+  if (keywords.includes('add') || keywords.includes('sum') || keywords.includes('calculator')) {
     name = "Addition Calculator";
-    code = `return { result: (params.a || 0) + (params.b || 0), message: "Sum calculated successfully" };`;
-  } 
-  else if (keywords.includes('multiply') || keywords.includes('product') || keywords.includes('times')) {
-    name = "Multiplication API";
-    code = `return { result: (params.a || 1) * (params.b || 1), message: "Product calculated successfully" };`;
-  }
-  else if (keywords.includes('search') || keywords.includes('find') || keywords.includes('daraz') || keywords.includes('product')) {
+    code = `return { result: (params.a || 0) + (params.b || 0) };`;
+  } else if (keywords.includes('search') || keywords.includes('daraz')) {
     name = "Daraz Product Search";
-    code = `const query = params.query || "laptop"; return { query: query, searchUrl: "https://www.daraz.com.bd/catalog/?q=" + encodeURIComponent(query), message: "Searching Daraz for " + query, results: "Open the searchUrl to see products" };`;
-  }
-  else if (keywords.includes('greet') || keywords.includes('hello') || keywords.includes('welcome') || keywords.includes('hi')) {
+    code = `const q = params.query || "laptop"; return { query: q, searchUrl: "https://www.daraz.com.bd/catalog/?q=" + encodeURIComponent(q) };`;
+  } else if (keywords.includes('greet') || keywords.includes('hello')) {
     name = "Greeting API";
-    code = `return { greeting: "Hello " + (params.name || "World") + "!", message: "Greeting generated successfully" };`;
-  }
-  else if (keywords.includes('convert') || keywords.includes('celsius') || keywords.includes('fahrenheit') || keywords.includes('temperature')) {
+    code = `return { greeting: "Hello " + (params.name || "World") };`;
+  } else if (keywords.includes('convert') || keywords.includes('celsius')) {
     name = "Temperature Converter";
-    code = `const celsius = params.celsius || 0; const fahrenheit = (celsius * 9/5) + 32; return { celsius: celsius, fahrenheit: fahrenheit, message: celsius + "°C is " + fahrenheit + "°F" };`;
-  }
-  else if (keywords.includes('even') || keywords.includes('odd') || keywords.includes('check')) {
-    name = "Even/Odd Checker";
-    code = `const num = params.number || 0; return { number: num, isEven: num % 2 === 0, message: num + " is " + (num % 2 === 0 ? "Even" : "Odd") };`;
-  }
-  else if (keywords.includes('weather') || keywords.includes('temperature') || keywords.includes('forecast')) {
-    name = "Weather API";
-    code = `const city = params.city || "Dhaka"; return { city: city, temperature: 28, condition: "Sunny", humidity: 65, message: "Weather data for " + city };`;
-  }
-  else if (keywords.includes('user') || keywords.includes('profile') || keywords.includes('info')) {
-    name = "User Profile API";
-    code = `return { name: params.name || "User", email: params.email || "user@example.com", age: params.age || 25, message: "User profile retrieved" };`;
-  }
-  else {
-    name = "Custom API Builder";
-    code = `return { message: "Your API is ready!", description: "${description.substring(0, 50)}", timestamp: new Date().toISOString(), params: params };`;
+    code = `const c = params.celsius || 0; return { celsius: c, fahrenheit: (c*9/5)+32 };`;
   }
 
   res.json({
