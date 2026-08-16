@@ -384,9 +384,10 @@ app.post('/api/payment/create', async (req, res) => {
   }
 });
 
-// ======================== AI ROUTE - COMPLETE WORKING VERSION ========================
+// ======================== AI ROUTE - UPDATED MODEL NAMES ========================
 
-// Use Gemini API with correct model (gemini-2.0-flash-lite)
+// Use Gemini API (free with university email)
+// ✅ Updated to use currently available models
 async function callGemini(description, apiKey) {
   const prompt = `
 You are an expert API designer and JavaScript developer.
@@ -407,45 +408,59 @@ The "code" field MUST contain valid JavaScript. If the user asks to search somet
 RESPOND ONLY WITH THE JSON. NO MARKDOWN. NO EXTRA TEXT.
 `;
 
-  try {
-    // ✅ FIXED: Using gemini-2.0-flash-lite (available and free)
-    const response = await axios.post(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=' + apiKey,
-      {
-        contents: [{
-          parts: [{ text: prompt }]
-        }]
-      },
-      { timeout: 15000 }
-    );
+  // ✅ Updated to use gemini-2.0-flash (currently available)
+  const models = [
+    'gemini-2.0-flash',
+    'gemini-2.5-flash',
+    'gemini-1.5-flash'
+  ];
 
-    const raw = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!raw) throw new Error('No response from Gemini');
+  let lastError = null;
 
-    console.log('📝 Raw Gemini response:', raw.substring(0, 300));
+  for (const model of models) {
+    try {
+      console.log(`🔄 Trying Gemini model: ${model}`);
+      const response = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=` + apiKey,
+        {
+          contents: [{
+            parts: [{ text: prompt }]
+          }]
+        },
+        { timeout: 15000 }
+      );
 
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('No JSON found in response');
+      const raw = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!raw) throw new Error('No response from Gemini');
 
-    const parsed = JSON.parse(jsonMatch[0]);
+      console.log(`✅ Success with model: ${model}`);
+      console.log('📝 Raw Gemini response:', raw.substring(0, 300));
 
-    if (!parsed.code || parsed.code.trim() === '') {
-      console.warn('⚠️ Gemini did not return code, using fallback');
-      parsed.code = `return { message: "Your API logic goes here", params: params };`;
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('No JSON found in response');
+
+      const parsed = JSON.parse(jsonMatch[0]);
+
+      if (!parsed.code || parsed.code.trim() === '') {
+        console.warn('⚠️ Gemini did not return code, using fallback');
+        parsed.code = `return { message: "Your API logic goes here", params: params };`;
+      }
+
+      return parsed;
+    } catch (error) {
+      console.warn(`❌ Model ${model} failed:`, error.response?.data?.error?.message || error.message);
+      lastError = error;
     }
-
-    return parsed;
-  } catch (error) {
-    console.error('Gemini API error:', error.response?.data || error.message);
-    throw error;
   }
+
+  throw new Error('All Gemini models failed. Last error: ' + lastError?.message);
 }
 
 app.post('/api/gemini-clarify', async (req, res) => {
   const { description } = req.body;
   if (!description) return res.status(400).json({ error: 'Please provide a description.' });
 
-  // Try Gemini first
+  // Try Gemini with multiple models
   const geminiKey = process.env.GEMINI_API_KEY;
   if (geminiKey) {
     try {
@@ -539,7 +554,6 @@ app.post('/api/gemini-clarify', async (req, res) => {
     code = `return { name: params.name || "User", email: params.email || "user@example.com", age: params.age || 25, message: "User profile retrieved" };`;
   }
   else {
-    // Default fallback
     name = "Custom API Builder";
     code = `return { message: "Your API is ready!", description: "${description.substring(0, 50)}", timestamp: new Date().toISOString(), params: params };`;
   }
