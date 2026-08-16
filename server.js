@@ -16,7 +16,11 @@ db.pragma('foreign_keys = ON');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-console.log('🔑 API Key loaded:', process.env.OPENROUTER_API_KEY ? '✅ YES' : '❌ NO');
+// Check which API key is available
+const geminiKey = process.env.GEMINI_API_KEY;
+const openrouterKey = process.env.OPENROUTER_API_KEY;
+console.log('🔑 Gemini API Key loaded:', geminiKey ? '✅ YES' : '❌ NO');
+console.log('🔑 OpenRouter API Key loaded:', openrouterKey ? '✅ YES' : '❌ NO');
 
 // CORS
 app.use(cors({
@@ -355,44 +359,39 @@ app.post('/api/payment/create', async (req, res) => {
     return res.status(400).json({ error: 'Amount and credits are required' });
   }
 
-  const updateStmt = db.prepare('UPDATE users SET credits = credits + ? WHERE id = ?');
-  const info = updateStmt.run(credits, userId);
-  console.log(`✅ Added ${credits} credits to user ${userId}`);
+  try {
+    const updateStmt = db.prepare('UPDATE users SET credits = credits + ? WHERE id = ?');
+    const info = updateStmt.run(credits, userId);
+    if (info.changes === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    console.log(`✅ Added ${credits} credits to user ${userId}`);
 
-  const fakePaymentID = `PAY-${Date.now()}-${userId}`;
-  const insertStmt = db.prepare(`
-    INSERT INTO payments (userId, paymentID, amount, credits, status) VALUES (?, ?, ?, ?, 'completed')
-  `);
-  insertStmt.run(userId, fakePaymentID, amount, credits);
+    const fakePaymentID = `PAY-${Date.now()}-${userId}`;
+    const insertStmt = db.prepare(`
+      INSERT INTO payments (userId, paymentID, amount, credits, status) VALUES (?, ?, ?, ?, 'completed')
+    `);
+    insertStmt.run(userId, fakePaymentID, amount, credits);
 
-  res.json({
-    success: true,
-    message: `✅ ${credits} credits added successfully! (Mock payment)`,
-    creditsAdded: credits
-  });
+    res.json({
+      success: true,
+      message: `✅ ${credits} credits added successfully!`,
+      creditsAdded: credits
+    });
+  } catch (error) {
+    console.error('Payment error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
-// ======================== AI ROUTE (FORCED CODE GENERATION) ========================
+// ======================== AI ROUTE USING GEMINI ========================
 
-async function getFreeModels(apiKey) {
-  try {
-    const response = await axios.get('https://openrouter.ai/api/v1/models', {
-      headers: { Authorization: `Bearer ${apiKey}` }
-    });
-    const allModels = response.data.data || [];
-    return allModels.filter(m => m.id.endsWith(':free')).map(m => m.id);
-  } catch (error) {
-    console.error('Failed to fetch models:', error.message);
-    return [];
-  }
-}
-
-async function callModel(model, description, apiKey) {
-  // Prompt that forces AI to return code
+// Use Gemini API (free with university email)
+async function callGemini(description, apiKey) {
   const prompt = `
 You are an expert API designer and JavaScript developer.
 
-IMPORTANT INSTRUCTION: You MUST generate a complete API implementation including JavaScript code.
+IMPORTANT: You MUST generate a complete API implementation including JavaScript code.
 
 User Description: "${description}"
 
@@ -408,12 +407,102 @@ The "code" field MUST contain valid JavaScript. If the user asks to search somet
 RESPOND ONLY WITH THE JSON. NO MARKDOWN. NO EXTRA TEXT.
 `;
 
+  try {
+    const response = await axios.post(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=' + apiKey,
+      {
+        contents: [{
+          parts: [{ text: prompt }]
+        }]
+      },
+      { timeout: 15000 }
+    );
+
+    const raw = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!raw) throw new Error('No response from Gemini');
+
+    console.log('📝 Raw Gemini response:', raw.substring(0, 500));
+
+    // Extract JSON using regex
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No JSON found in response');
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    // Ensure code field exists
+    if (!parsed.code || parsed.code.trim() === '') {
+      console.warn('⚠️ Gemini did not return code, using fallback');
+      parsed.code = `return { message: "Your API logic goes here", params: params };`;
+    }
+
+    return parsed;
+  } catch (error) {
+    console.error('Gemini API error:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
+app.post('/api/gemini-clarify', async (req, res) => {
+  const { description } = req.body;
+  if (!description) return res.status(400).json({ error: 'Please provide a description.' });
+
+  // Try Gemini first
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (geminiKey) {
+    try {
+      console.log('🔄 Trying Gemini (University)');
+      const result = await callGemini(description, geminiKey);
+      console.log('✅ Success with Gemini');
+      return res.json(result);
+    } catch (error) {
+      console.warn('❌ Gemini failed:', error.message);
+    }
+  }
+
+  // Fallback to OpenRouter if Gemini fails
+  const openrouterKey = process.env.OPENROUTER_API_KEY;
+  if (openrouterKey) {
+    try {
+      console.log('🔄 Trying OpenRouter fallback');
+      // Use the existing OpenRouter callModel function (I'll keep it simple)
+      const result = await callOpenRouter(description, openrouterKey);
+      console.log('✅ Success with OpenRouter');
+      return res.json(result);
+    } catch (error) {
+      console.warn('❌ OpenRouter failed:', error.message);
+    }
+  }
+
+  // If all fail
+  res.status(500).json({
+    error: 'AI service unavailable. Please check your API keys or try again later.'
+  });
+});
+
+// OpenRouter fallback function (simplified)
+async function callOpenRouter(description, apiKey) {
+  const prompt = `
+You are an expert API designer and JavaScript developer.
+
+IMPORTANT: You MUST generate a complete API implementation including JavaScript code.
+
+User Description: "${description}"
+
+You MUST respond with a valid JSON object containing exactly these three fields:
+{
+  "name": "A short, descriptive name for the API",
+  "description": "A detailed, technical description of what this API should do",
+  "code": "JavaScript code that implements the API. The code must take a 'params' object and return a result. DO NOT use require() or import. Use only pure JavaScript."
+}
+
+RESPOND ONLY WITH THE JSON. NO MARKDOWN. NO EXTRA TEXT.
+`;
   const response = await axios.post(
     'https://openrouter.ai/api/v1/chat/completions',
     {
-      model: model,
+      model: 'openai/gpt-4o-mini',
       messages: [
-        { role: 'system', content: 'You are a helpful API design assistant. Always respond with valid JSON only. Do not wrap the JSON in markdown or add any extra text outside the JSON. The JSON must have "name", "description", and "code" fields.' },
+        { role: 'system', content: 'You are a helpful API design assistant. Always respond with valid JSON only.' },
         { role: 'user', content: prompt }
       ],
       temperature: 0.3,
@@ -422,79 +511,16 @@ RESPOND ONLY WITH THE JSON. NO MARKDOWN. NO EXTRA TEXT.
     {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'http://localhost:5173',
-        'X-Title': 'API Builder Project'
+        'Content-Type': 'application/json'
       },
       timeout: 15000
     }
   );
-
   const raw = response.data.choices[0].message.content;
-  console.log('📝 Raw AI response:', raw.substring(0, 500));
-
-  // Extract JSON using regex
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('No JSON found in response');
-
-  const parsed = JSON.parse(jsonMatch[0]);
-
-  // Ensure code field exists, if not, generate a fallback
-  if (!parsed.code || parsed.code.trim() === '') {
-    console.warn('⚠️ AI did not return code, using fallback');
-    parsed.code = `return { message: "Your API logic goes here", params: params };`;
-  }
-
-  return parsed;
+  if (!jsonMatch) throw new Error('No JSON found');
+  return JSON.parse(jsonMatch[0]);
 }
-
-app.post('/api/gemini-clarify', async (req, res) => {
-  const { description } = req.body;
-  if (!description) return res.status(400).json({ error: 'Please provide a description.' });
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: 'API key missing.' });
-
-  let freeModels = await getFreeModels(apiKey);
-  console.log(`📋 Found ${freeModels.length} free models`);
-  let lastError = null;
-
-  // Try free models first
-  for (const model of freeModels) {
-    try {
-      console.log(`🔄 Trying free model: ${model}`);
-      const result = await callModel(model, description, apiKey);
-      console.log(`✅ Success with model: ${model}`);
-      return res.json(result);
-    } catch (error) {
-      console.warn(`❌ Model ${model} failed:`, error.message);
-      lastError = error;
-    }
-  }
-
-  // Fallback to paid models
-  const PAID_MODELS = ['openai/gpt-4o-mini', 'anthropic/claude-3-haiku'];
-  for (const model of PAID_MODELS) {
-    try {
-      console.log(`🔄 Trying paid model: ${model}`);
-      const result = await callModel(model, description, apiKey);
-      console.log(`✅ Success with paid model: ${model}`);
-      return res.json(result);
-    } catch (error) {
-      console.warn(`❌ Paid model ${model} failed:`, error.message);
-      lastError = error;
-    }
-  }
-
-  console.error('All models failed.');
-  let errorMsg = 'AI service unavailable. ';
-  if (lastError && lastError.response && lastError.response.data && lastError.response.data.error) {
-    const err = lastError.response.data.error;
-    errorMsg += `OpenRouter says: ${err.message || JSON.stringify(err)}`;
-  } else {
-    errorMsg += 'Please check your internet connection and OpenRouter credits.';
-  }
-  res.status(500).json({ error: errorMsg });
-});
 
 // ======================== START SERVER ========================
 
